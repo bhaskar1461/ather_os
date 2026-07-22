@@ -1,0 +1,98 @@
+version: "3.8"
+
+services:
+  # ── PostgreSQL Database ─────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: aether_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: aether_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis Cache & Revocation Store ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: aether_redis
+    restart: always
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── API Backend ─────────────────────────────────────────────────────────────
+  api:
+    image: aether-api:kimi-bedrock
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    container_name: aether_api
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/aether_platform
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=production
+      - JWT_SECRET_KEY=secure-jwt-secret-key-production-only-change
+      - AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK:?Set AWS_BEARER_TOKEN_BEDROCK before starting the API container}
+      - AWS_REGION_NAME=${AWS_REGION_NAME:-us-east-1}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-moonshotai.kimi-k2.5}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Frontend Interface ──────────────────────────────────────────────────────
+  web:
+    image: aether-web:kimi-bedrock
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    container_name: aether_web
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=production
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api
+
+  # ── Nginx Reverse Proxy ─────────────────────────────────────────────────────
+  proxy:
+    image: nginx:alpine
+    container_name: aether_proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - api
+      - web
+
+volumes:
+  postgres_data:
+  redis_data:
+

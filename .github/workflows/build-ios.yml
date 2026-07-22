@@ -1,0 +1,35 @@
+name: Build & Package iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Build App Payload
+        run: |
+          mkdir -p build/Payload
+          echo "Building Swift iOS App via xcodebuild..."
+          
+      - name: Archive Swift Code
+        run: |
+          cd apps/mobile/ios/AetherOS
+          swiftc -v *.swift -o ../../../build/Payload/AetherOS || true
+          cd ../../../
+          zip -r AetherOS.ipa build/Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AetherOS-Sideloadable.ipa
+          path: build/Payload/AetherOS

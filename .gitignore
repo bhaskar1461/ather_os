@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+apps/web/node_modules/
+apps/mobile/node_modules/
+
+# Next.js build outputs
+.next/
+apps/web/.next/
+out/
+build/
+
+# Python Virtual Environments & Bytecode
+venv/
+apps/api/venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Scratch & Debug Files
+scratch/
+brain/
+*.json
+*.pdf
+*.zip
+*.tar.gz
+
+# Local databases & uploads
+*.db
+local.db
+uploads/
+
+# Environment files & secrets
+.env
+*.pem
+*.pub
+tokensave/
+.tokensave/
+
+# IDE & OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
