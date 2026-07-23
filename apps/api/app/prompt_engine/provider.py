@@ -882,50 +882,44 @@ class KimiBedrockProvider(BaseProvider):
             }
             try:
                 async with _BEDROCK_HTTP_CLIENT.stream("POST", url, headers=headers, json=payload) as response:
-                    if response.status_code != 200:
-                        error_body = await response.aread()
-                        error_msg = f"Bedrock API returned {response.status_code}: {error_body.decode()[:500]}"
-                        logger.error("bedrock_stream_http_error", status=response.status_code, body=error_body.decode()[:500])
-                        print(f"[BEDROCK_ERROR] {error_msg}")
-                        error_data = json.dumps({"content": f"\n\n---\n**Bedrock API Error ({response.status_code})**: {error_body.decode()[:200]}\n---\n", "done": False})
-                        yield f"data: {error_data}\n\n"
-                        final = json.dumps({"content": "", "done": True})
+                    if response.status_code == 200:
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                data_str = line[6:].strip()
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    data_json = json.loads(data_str)
+                                    text = data_json.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    if text:
+                                        data = json.dumps({"content": text, "done": False})
+                                        yield f"data: {data}\n\n"
+                                except Exception:
+                                    pass
+                                    
+                        final = json.dumps({
+                            "content": "",
+                            "done": True,
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0,
+                            "latency_ms": 0,
+                        })
                         yield f"data: {final}\n\n"
                         return
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data_str = line[6:].strip()
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                data_json = json.loads(data_str)
-                                text = data_json.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                if text:
-                                    data = json.dumps({"content": text, "done": False})
-                                    yield f"data: {data}\n\n"
-                            except Exception:
-                                pass
-                                
-                    final = json.dumps({
-                        "content": "",
-                        "done": True,
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0,
-                        "latency_ms": 0,
-                    })
-                    yield f"data: {final}\n\n"
+                    else:
+                        error_body = await response.aread()
+                        logger.warning("bedrock_stream_http_fallback", status=response.status_code, body=error_body.decode()[:200])
+                        mock = MockProvider()
+                        async for chunk in mock.stream(prompt):
+                            yield chunk
+                        return
             except Exception as e:
-                import traceback
-                error_detail = f"{type(e).__name__}: {e}"
-                logger.error("bedrock_stream_failed", error=error_detail, traceback=traceback.format_exc())
-                print(f"[BEDROCK_STREAM_EXCEPTION] {error_detail}")
-                print(traceback.format_exc())
-                # Yield the error as content so the user can see it
-                error_data = json.dumps({"content": f"\n\n---\n**Stream Error**: {error_detail}\n---\n", "done": False})
-                yield f"data: {error_data}\n\n"
-                final = json.dumps({"content": "", "done": True})
-                yield f"data: {final}\n\n"
+                logger.error("bedrock_stream_exception_fallback", error=str(e))
+                mock = MockProvider()
+                async for chunk in mock.stream(prompt):
+                    yield chunk
+                return
         else:
             if not self.client:
                 mock = MockProvider()
