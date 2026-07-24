@@ -7,29 +7,82 @@ on:
 
 jobs:
   build-ios:
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-
-      - name: Build App Payload
+      - name: Setup Xcode Environment
         run: |
-          mkdir -p build/Payload
-          echo "Building Swift iOS App via xcodebuild..."
-          
-      - name: Archive Swift Code
-        run: |
-          cd apps/mobile/ios/AetherOS
-          swiftc -v *.swift -o ../../../build/Payload/AetherOS || true
-          cd ../../../
-          zip -r AetherOS.ipa build/Payload
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          xcrun --sdk iphoneos --show-sdk-path
 
-      - name: Upload IPA Artifact
+      - name: Create iOS App Bundle Structure
+        run: |
+          mkdir -p build/Payload/AetherOS.app
+          echo "APPL????" > build/Payload/AetherOS.app/PkgInfo
+
+      - name: Generate Info.plist
+        run: |
+          cat << 'EOF' > build/Payload/AetherOS.app/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDevelopmentRegion</key>
+              <string>en</string>
+              <key>CFBundleExecutable</key>
+              <string>AetherOS</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.aetheros.app</string>
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+              <key>CFBundleName</key>
+              <string>AetherOS</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+              <key>MinimumOSVersion</key>
+              <string>16.0</string>
+              <key>UIRequiredDeviceCapabilities</key>
+              <array>
+                  <string>arm64</string>
+              </array>
+              <key>UISupportedInterfaceOrientations</key>
+              <array>
+                  <string>UIInterfaceOrientationPortrait</string>
+              </array>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Compile Swift App Binary
+        run: |
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          swiftc -target arm64-apple-ios16.0 \
+                 -sdk "$SDK_PATH" \
+                 -parse-as-library \
+                 -O \
+                 apps/mobile/ios/AetherOS/*.swift \
+                 -o build/Payload/AetherOS.app/AetherOS
+
+      - name: Package Sideloadable IPA
+        run: |
+          cd build
+          zip -r ../AetherOS-Sideloadable.ipa Payload
+          cd ..
+          ls -lh AetherOS-Sideloadable.ipa
+
+      - name: Upload Sideloadable IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AetherOS-Sideloadable.ipa
-          path: build/Payload/AetherOS
+          path: AetherOS-Sideloadable.ipa
+          if-no-files-found: error
+
