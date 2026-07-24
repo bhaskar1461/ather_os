@@ -1,5 +1,6 @@
 name: Build & Package iOS IPA
 
+# Trigger build for native iOS IPA packaging
 on:
   push:
     branches: [ main, master ]
