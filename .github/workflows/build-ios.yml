@@ -65,7 +65,9 @@ jobs:
       - name: Compile Swift App Binary
         run: |
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          swiftc -target arm64-apple-ios16.0 \
+          echo "iOS SDK Path: $SDK_PATH"
+          ls -la apps/mobile/ios/AetherOS/
+          swiftc -v -target arm64-apple-ios16.0 \
                  -sdk "$SDK_PATH" \
                  -parse-as-library \
                  -framework SwiftUI \
