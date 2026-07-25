@@ -30,6 +30,7 @@ _REPORT_TEMPLATE_MAP: dict[str, str] = {
     "remedies": "remedies.md",
     "annual-forecast": "annual_forecast.md",
     "weekly-forecast": "weekly_forecast.md",
+    "bazi": "bazi.md",
 }
 
 

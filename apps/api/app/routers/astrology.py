@@ -18,10 +18,14 @@ from app.redis_manager import get_redis
 from packages.database.connection import get_db
 from packages.database.models import User
 from app.security.dependencies import get_current_user
-from app.schemas import AstrologyChartRequest, AstrologyReadingRequest, AstrologyReadingRequestV2, AstrologyPDFExportRequest, CompatibilityRequest, TransitRequest
+from app.schemas import AstrologyChartRequest, AstrologyReadingRequest, AstrologyReadingRequestV2, AstrologyPDFExportRequest, CompatibilityRequest, TransitRequest, BaZiChartRequest, BaZiCompatibilityRequest, KPCalculationRequest, KPHoraryRequest
 
 from app.astrology.calculator import calculate_chart_data
 from app.astrology.rules import evaluate_chart_rules
+from app.astrology.bazi_engine import calculate_bazi_pillars
+from app.astrology.bazi_analysis import analyze_bazi_chart, calculate_bazi_compatibility
+from app.astrology.kp_engine import calculate_kp_chart
+from app.astrology.kp_analysis import calculate_kp_significators, calculate_kp_horary
 from app.astrology.knowledge import build_knowledge_prompt_context
 from app.astrology.validator import validate_reading_placements
 from app.astrology.report_prompts import build_report_system_instruction, build_report_user_message
@@ -1533,3 +1537,178 @@ async def get_soulmate_portrait(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Soulmate portrait generation failed: {str(e)}"
         )
+
+
+@router.post("/bazi", summary="Calculate authentic Chinese Astrology (BaZi Four Pillars) chart")
+def get_bazi_chart(
+    body: BaZiChartRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Computes genuine Four Pillars of Destiny (BaZi) Chinese Astrology chart using Swiss Ephemeris
+    solar ecliptic longitude calculations. Enforces Lichun (315°) year boundary, 12 principal solar term
+    month boundaries, Zi-hour (23:00) day shift rule, Five Rats hour stem method, and ZiPing Day Master strength.
+    """
+    try:
+        pillars_data = calculate_bazi_pillars(
+            year=body.year,
+            month=body.month,
+            day=body.day,
+            hour=body.hour,
+            minute=body.minute,
+            lat=body.latitude,
+            lon=body.longitude,
+            tz_offset_hours=body.timezone_offset
+        )
+        analysis_data = analyze_bazi_chart(pillars_data)
+
+        return {
+            "status": "success",
+            "pillars_data": pillars_data,
+            "analysis": analysis_data,
+        }
+    except Exception as e:
+        logger.error("bazi_calculation_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"BaZi astrological calculation failure: {str(e)}"
+        )
+
+
+@router.post("/bazi/compatibility", summary="Calculate genuine BaZi Synastry compatibility between two charts")
+def get_bazi_compatibility(
+    body: BaZiCompatibilityRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Computes genuine BaZi Synastry (He Sang Xiang Chong) compatibility between two charts.
+    Evaluates Day Master synergy, Spouse Palace (Day Branch) harmony, Element Complementarity (Yong Shen),
+    and Year Branch Zodiac affinity.
+    """
+    try:
+        bazi_a_pillars = calculate_bazi_pillars(
+            year=body.person_a.year,
+            month=body.person_a.month,
+            day=body.person_a.day,
+            hour=body.person_a.hour,
+            minute=body.person_a.minute,
+            lat=body.person_a.latitude,
+            lon=body.person_a.longitude,
+            tz_offset_hours=body.person_a.timezone_offset
+        )
+        bazi_a_analysis = analyze_bazi_chart(bazi_a_pillars)
+
+        bazi_b_pillars = calculate_bazi_pillars(
+            year=body.person_b.year,
+            month=body.person_b.month,
+            day=body.person_b.day,
+            hour=body.person_b.hour,
+            minute=body.person_b.minute,
+            lat=body.person_b.latitude,
+            lon=body.person_b.longitude,
+            tz_offset_hours=body.person_b.timezone_offset
+        )
+        bazi_b_analysis = analyze_bazi_chart(bazi_b_pillars)
+
+        comp_res = calculate_bazi_compatibility(
+            {"pillars_data": bazi_a_pillars, "analysis": bazi_a_analysis},
+            {"pillars_data": bazi_b_pillars, "analysis": bazi_b_analysis}
+        )
+
+        return {
+            "status": "success",
+            "person_a": {
+                "pillars_data": bazi_a_pillars,
+                "analysis": bazi_a_analysis,
+            },
+            "person_b": {
+                "pillars_data": bazi_b_pillars,
+                "analysis": bazi_b_analysis,
+            },
+            "compatibility": comp_res,
+        }
+    except Exception as e:
+        logger.error("bazi_compatibility_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"BaZi compatibility calculation failure: {str(e)}"
+        )
+
+
+
+@router.post("/kp", summary="Calculate authentic KP (Krishnamurti Paddhati) Astrology chart")
+def get_kp_chart(
+    body: KPCalculationRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Computes genuine KP (Krishnamurti Paddhati) birth chart using Krishnamurti Ayanamsa (mode 5)
+    and Placidus House System ('P'). Returns Sub-Lords for all planets and cusps, 4-level house significators,
+    and Ruling Planets.
+    """
+    try:
+        chart_data = calculate_kp_chart(
+            year=body.year,
+            month=body.month,
+            day=body.day,
+            hour=body.hour,
+            minute=body.minute,
+            lat=body.latitude,
+            lon=body.longitude,
+            tz_offset_hours=body.timezone_offset
+        )
+        significators_data = calculate_kp_significators(chart_data)
+
+        return {
+            "status": "success",
+            "chart": chart_data,
+            "significators": significators_data,
+        }
+    except Exception as e:
+        logger.error("kp_calculation_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"KP astrological calculation failure: {str(e)}"
+        )
+
+
+@router.post("/kp/horary", summary="Calculate KP Horary (Prashna 1-249) chart")
+def get_kp_horary_chart(
+    body: KPHoraryRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Computes KP Prashna Horary chart for a number between 1 and 249.
+    Sets the starting longitude of the 249 sub-division as the Horary Ascendant
+    and derives Placidus house cusps and 4-level significators.
+    """
+    try:
+        horary_result = calculate_kp_horary(
+            horary_number=body.horary_number,
+            year=body.year,
+            month=body.month,
+            day=body.day,
+            hour=body.hour,
+            minute=body.minute,
+            lat=body.latitude,
+            lon=body.longitude,
+            tz_offset_hours=body.timezone_offset
+        )
+        return {
+            "status": "success",
+            "horary_number": body.horary_number,
+            "horary_chart": horary_result["horary_chart"],
+            "significators": horary_result["significators"],
+        }
+    except Exception as e:
+        logger.error("kp_horary_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"KP Horary calculation failure: {str(e)}"
+        )
+
+

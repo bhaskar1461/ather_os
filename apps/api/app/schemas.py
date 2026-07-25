@@ -349,3 +349,52 @@ class AstrologyPDFExportRequest(BaseModel):
     metadata: AstrologyPDFMetadata
     content_markdown: str
 
+
+# ── BaZi Schemas ─────────────────────────────────────────────────────────────
+
+class BaZiChartRequest(BaseModel):
+    year: int = Field(..., ge=1900, le=2100)
+    month: int = Field(..., ge=1, le=12)
+    day: int = Field(..., ge=1, le=31)
+    hour: int = Field(..., ge=0, le=23)
+    minute: int = Field(..., ge=0, le=59)
+    latitude: float = Field(default=0.0, ge=-90.0, le=90.0)
+    longitude: float = Field(default=0.0, ge=-180.0, le=180.0)
+    timezone_offset: float = Field(default=0.0, ge=-12.0, le=14.0)
+    location_timezone: str = Field(default="UTC", min_length=1, max_length=100)
+
+
+class BaZiCompatibilityRequest(BaseModel):
+    person_a: BaZiChartRequest
+    person_b: BaZiChartRequest
+
+
+
+# ── KP Schemas ───────────────────────────────────────────────────────────────
+
+class KPCalculationRequest(BaseModel):
+    year: int = Field(..., ge=1900, le=2100)
+    month: int = Field(..., ge=1, le=12)
+    day: int = Field(..., ge=1, le=31)
+    hour: int = Field(..., ge=0, le=23)
+    minute: int = Field(..., ge=0, le=59)
+    latitude: float = Field(default=0.0, ge=-90.0, le=90.0)
+    longitude: float = Field(default=0.0, ge=-180.0, le=180.0)
+    timezone_offset: float = Field(default=0.0, ge=-12.0, le=14.0)
+    location_timezone: str = Field(default="UTC", min_length=1, max_length=100)
+
+
+class KPHoraryRequest(BaseModel):
+    horary_number: int = Field(..., ge=1, le=249)
+    year: int = Field(..., ge=1900, le=2100)
+    month: int = Field(..., ge=1, le=12)
+    day: int = Field(..., ge=1, le=31)
+    hour: int = Field(..., ge=0, le=23)
+    minute: int = Field(..., ge=0, le=59)
+    latitude: float = Field(default=0.0, ge=-90.0, le=90.0)
+    longitude: float = Field(default=0.0, ge=-180.0, le=180.0)
+    timezone_offset: float = Field(default=0.0, ge=-12.0, le=14.0)
+    location_timezone: str = Field(default="UTC", min_length=1, max_length=100)
+
+
+
