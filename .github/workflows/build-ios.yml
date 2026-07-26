@@ -73,6 +73,8 @@ jobs:
                  -framework SwiftUI \
                  -framework Security \
                  -framework Foundation \
+                 -framework LocalAuthentication \
+                 -framework UIKit \
                  -O \
                  apps/mobile/ios/AetherOS/*.swift \
                  -o build/Payload/AetherOS.app/AetherOS
