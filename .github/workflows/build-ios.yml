@@ -1,6 +1,5 @@
 name: Build & Package iOS IPA
 
-# Trigger build for native iOS IPA packaging
 on:
   push:
     branches: [ main, master ]
@@ -14,79 +13,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Verify iOS SDK
+      - name: Build Xcode Project
         run: |
-          xcrun --sdk iphoneos --show-sdk-path
-
-      - name: Create iOS App Bundle Structure
-        run: |
-          mkdir -p build/Payload/AetherOS.app
-          echo "APPL????" > build/Payload/AetherOS.app/PkgInfo
-
-      - name: Generate Info.plist
-        run: |
-          cat << 'EOF' > build/Payload/AetherOS.app/Info.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleDevelopmentRegion</key>
-              <string>en</string>
-              <key>CFBundleExecutable</key>
-              <string>AetherOS</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.aetheros.app</string>
-              <key>CFBundleInfoDictionaryVersion</key>
-              <string>6.0</string>
-              <key>CFBundleName</key>
-              <string>AetherOS</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0.0</string>
-              <key>CFBundleVersion</key>
-              <string>1</string>
-              <key>LSRequiresIPhoneOS</key>
-              <true/>
-              <key>MinimumOSVersion</key>
-              <string>16.0</string>
-              <key>UIRequiredDeviceCapabilities</key>
-              <array>
-                  <string>arm64</string>
-              </array>
-              <key>UISupportedInterfaceOrientations</key>
-              <array>
-                  <string>UIInterfaceOrientationPortrait</string>
-              </array>
-              <key>NSAppTransportSecurity</key>
-              <dict>
-                  <key>NSAllowsArbitraryLoads</key>
-                  <true/>
-              </dict>
-          </dict>
-          </plist>
-          EOF
-
-      - name: Compile Swift App Binary
-        run: |
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "iOS SDK Path: $SDK_PATH"
-          ls -la apps/mobile/ios/AetherOS/
-          swiftc -v -target arm64-apple-ios16.0 \
-                 -sdk "$SDK_PATH" \
-                 -parse-as-library \
-                 -framework SwiftUI \
-                 -framework Security \
-                 -framework Foundation \
-                 -framework LocalAuthentication \
-                 -framework UIKit \
-                 -framework WebKit \
-                 -O \
-                 apps/mobile/ios/AetherOS/*.swift \
-                 -o build/Payload/AetherOS.app/AetherOS
+          xcodebuild -project apps/mobile/ios/AetherOS.xcodeproj \
+                     -scheme AetherOS \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -derivedDataPath build/DerivedData \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGNING_REQUIRED=NO \
+                     CODE_SIGNING_ALLOWED=NO
 
       - name: Package Sideloadable IPA
         run: |
+          mkdir -p build/Payload
+          cp -R build/DerivedData/Build/Products/Release-iphoneos/AetherOS.app build/Payload/
           cd build
           zip -r ../AetherOS-Sideloadable.ipa Payload
           cd ..
@@ -98,5 +39,3 @@ jobs:
           name: AetherOS-Sideloadable.ipa
           path: AetherOS-Sideloadable.ipa
           if-no-files-found: error
-
-
