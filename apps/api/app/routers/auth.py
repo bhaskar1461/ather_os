@@ -57,7 +57,7 @@ limiter = Limiter(key_func=get_remote_address)
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user account",
 )
-@limiter.limit("3/minute")
+@limiter.limit("60/minute")
 async def register(body: RegisterRequest, request: Request, db: DBSession = Depends(get_db)) -> UserResponse:
     """
     Create a new user account.
@@ -121,7 +121,7 @@ async def register(body: RegisterRequest, request: Request, db: DBSession = Depe
     response_model=TokenResponse,
     summary="Authenticate and receive JWT tokens",
 )
-@limiter.limit("5/minute")
+@limiter.limit("120/minute")
 async def login(
     body: LoginRequest,
     request: Request,
@@ -333,7 +333,7 @@ async def verify_email(
     response_model=MessageDetail,
     summary="Request a 6-digit email OTP",
 )
-@limiter.limit("3/minute")
+@limiter.limit("60/minute")
 async def request_otp(
     body: OTPRequest,
     request: Request,
@@ -357,8 +357,8 @@ async def request_otp(
     
     # Store OTP with 10-minute expiry (600s)
     await redis.setex(f"otp:{body.email}", 600, otp_code)
-    # Store cooldown (60s)
-    await redis.setex(f"otp_cooldown:{body.email}", 60, "1")
+    # Store cooldown (3s)
+    await redis.setex(f"otp_cooldown:{body.email}", 3, "1")
     # Reset retry attempt counter
     await redis.delete(f"otp_attempts:{body.email}")
 
@@ -378,7 +378,7 @@ async def request_otp(
     response_model=TokenResponse,
     summary="Verify OTP and authenticate user",
 )
-@limiter.limit("5/minute")
+@limiter.limit("120/minute")
 async def verify_otp(
     body: OTPVerifyRequest,
     request: Request,
@@ -465,7 +465,7 @@ async def verify_otp(
     response_model=MessageDetail,
     summary="Resend email OTP",
 )
-@limiter.limit("3/minute")
+@limiter.limit("60/minute")
 async def resend_otp(
     body: OTPResendRequest,
     request: Request,
@@ -483,7 +483,7 @@ async def resend_otp(
     response_model=TokenResponse,
     summary="Authenticate using Google OAuth 2.0 Token",
 )
-@limiter.limit("5/minute")
+@limiter.limit("120/minute")
 async def google_login(
     body: GoogleLoginRequest,
     request: Request,
@@ -575,7 +575,7 @@ async def google_login(
     response_model=MessageDetail,
     summary="Request a password reset",
 )
-@limiter.limit("3/minute")
+@limiter.limit("60/minute")
 async def forgot_password(
     body: ForgotPasswordRequest,
     request: Request,
