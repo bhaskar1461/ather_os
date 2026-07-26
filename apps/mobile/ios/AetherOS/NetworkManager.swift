@@ -1,5 +1,20 @@
 import Foundation
 
+struct ErrorDetailResponse: Decodable {
+    let detail: String?
+    let error: NestedError?
+    
+    struct NestedError: Decodable {
+        let message: String?
+    }
+    
+    var cleanMessage: String? {
+        if let detail = detail { return detail }
+        if let msg = error?.message { return msg }
+        return nil
+    }
+}
+
 /// Main Async HTTP Service for interacting with AetherOS Backend
 public actor NetworkManager {
     public static let shared = NetworkManager()
@@ -84,6 +99,10 @@ public actor NetworkManager {
         }
         
         guard (200...299).contains(httpResponse.statusCode) else {
+            if let decodedError = try? JSONDecoder().decode(ErrorDetailResponse.self, from: data),
+               let cleanMsg = decodedError.cleanMessage {
+                throw APIError.httpError(statusCode: httpResponse.statusCode, message: cleanMsg)
+            }
             let message = String(data: data, encoding: .utf8) ?? "Unknown server error"
             throw APIError.httpError(statusCode: httpResponse.statusCode, message: message)
         }
@@ -105,6 +124,16 @@ public actor NetworkManager {
     }
     
     // MARK: - Authentication Methods
+
+    public func register(name: String, email: String, password: String) async throws -> User {
+        struct RegisterPayload: Encodable {
+            let name: String
+            let email: String
+            let password: String
+        }
+        let payload = RegisterPayload(name: name, email: email, password: password)
+        return try await request(path: "/auth/register", method: "POST", body: payload, requiresAuth: false)
+    }
     
     public func login(email: String, password: String) async throws -> TokenResponse {
         struct LoginPayload: Encodable {

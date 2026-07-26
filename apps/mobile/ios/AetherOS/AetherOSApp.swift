@@ -44,6 +44,20 @@ class AuthViewModel: ObservableObject {
             self.isAuthenticated = true
         }
     }
+
+    func register(name: String, email: String, password: String) async {
+        isLoading = true
+        errorMessage = nil
+        do {
+            _ = try await NetworkManager.shared.register(name: name, email: email, password: password)
+            // Log in immediately after registering
+            _ = try await NetworkManager.shared.login(email: email, password: password)
+            isAuthenticated = true
+        } catch {
+            errorMessage = formatError(error)
+        }
+        isLoading = false
+    }
     
     func login(email: String, password: String) async {
         isLoading = true
@@ -52,7 +66,7 @@ class AuthViewModel: ObservableObject {
             _ = try await NetworkManager.shared.login(email: email, password: password)
             isAuthenticated = true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = formatError(error)
         }
         isLoading = false
     }
@@ -64,9 +78,20 @@ class AuthViewModel: ObservableObject {
             _ = try await NetworkManager.shared.verifyOTP(email: email, code: code)
             isAuthenticated = true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = formatError(error)
         }
         isLoading = false
+    }
+
+    private func formatError(_ error: Error) -> String {
+        let msg = error.localizedDescription
+        if msg.contains("401") || msg.contains("Invalid email or password") {
+            return "Invalid email or password. Please check your credentials or create a new account."
+        }
+        if msg.contains("400") || msg.contains("already exists") {
+            return "An account with this email already exists. Please sign in instead."
+        }
+        return msg
     }
     
     func logout() {
@@ -109,9 +134,11 @@ struct MainTabView: View {
 }
 
 struct AuthenticationView: View {
+    @State private var name = ""
     @State private var email = ""
     @State private var password = ""
     @State private var otpCode = ""
+    @State private var isRegisterMode = false
     @State private var isOTPMode = false
     @State private var otpSent = false
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -123,24 +150,30 @@ struct AuthenticationView: View {
             VStack(spacing: 8) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 54))
-                    .foregroundStyle(.linearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .foregroundStyle(.linearGradient(colors: [Color(red: 0.39, green: 0.40, blue: 0.95), .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
                 
                 Text("AetherOS")
                     .font(.largeTitle.bold())
+                    .foregroundColor(.white)
                 
-                Text("Luxury Personal AI Operating System")
+                Text(isRegisterMode ? "Create Your Cosmic Profile" : "Luxury Personal AI Operating System")
                     .font(.subheadline)
                     .foregroundColor(.gray)
             }
             
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
+                if isRegisterMode {
+                    TextField("Full Name", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                }
+
                 TextField("Email Address", text: $email)
                     .textFieldStyle(.roundedBorder)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.emailAddress)
                 
                 if !isOTPMode {
-                    SecureField("Password", text: $password)
+                    SecureField("Password (min. 8 chars)", text: $password)
                         .textFieldStyle(.roundedBorder)
                 } else if otpSent {
                     TextField("6-Digit OTP Code", text: $otpCode)
@@ -152,11 +185,16 @@ struct AuthenticationView: View {
                     Text(error)
                         .font(.caption)
                         .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
                 }
                 
                 Button(action: {
                     Task {
-                        if isOTPMode {
+                        HapticManager.shared.impact(.medium)
+                        if isRegisterMode {
+                            await authViewModel.register(name: name, email: email, password: password)
+                        } else if isOTPMode {
                             if !otpSent {
                                 try? await NetworkManager.shared.requestOTP(email: email)
                                 otpSent = true
@@ -171,26 +209,34 @@ struct AuthenticationView: View {
                     HStack {
                         if authViewModel.isLoading {
                             ProgressView()
+                                .tint(.white)
                         } else {
-                            Text(isOTPMode ? (otpSent ? "Verify Code" : "Send OTP Email") : "Sign In")
+                            Text(isRegisterMode ? "Create Account" : (isOTPMode ? (otpSent ? "Verify Code" : "Send OTP Email") : "Sign In"))
                                 .bold()
                         }
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.purple)
+                    .background(LinearGradient(colors: [Color(red: 0.39, green: 0.40, blue: 0.95), Color.purple], startPoint: .leading, endPoint: .trailing))
                     .foregroundColor(.white)
                     .cornerRadius(12)
+                    .shadow(color: Color(red: 0.39, green: 0.40, blue: 0.95).opacity(0.3), radius: 8, x: 0, y: 4)
                 }
                 
-                Button(action: {
-                    isOTPMode.toggle()
-                    otpSent = false
-                }) {
-                    Text(isOTPMode ? "Use Password Login" : "Login via Email OTP")
-                        .font(.footnote)
-                        .foregroundColor(.purple)
+                HStack(spacing: 16) {
+                    Button(action: {
+                        withAnimation {
+                            isRegisterMode.toggle()
+                            isOTPMode = false
+                            authViewModel.errorMessage = nil
+                        }
+                    }) {
+                        Text(isRegisterMode ? "Already have an account? Sign In" : "Need an account? Register")
+                            .font(.footnote)
+                            .foregroundColor(Color(red: 0.39, green: 0.40, blue: 0.95))
+                    }
                 }
+                .padding(.top, 4)
             }
             .padding(.horizontal, 32)
             
