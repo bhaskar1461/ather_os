@@ -18,10 +18,10 @@ from app.redis_manager import get_redis
 from packages.database.connection import get_db
 from packages.database.models import User
 from app.security.dependencies import get_current_user
-from app.schemas import AstrologyChartRequest, AstrologyReadingRequest, AstrologyReadingRequestV2, AstrologyPDFExportRequest, CompatibilityRequest, TransitRequest, BaZiChartRequest, BaZiCompatibilityRequest, KPCalculationRequest, KPHoraryRequest
+from app.schemas import AstrologyChartRequest, AstrologyReadingRequest, AstrologyReadingRequestV2, AstrologyPDFExportRequest, CompatibilityRequest, TransitRequest, BaZiChartRequest, BaZiCompatibilityRequest, BaZiCompatibilityChatRequest, KPCalculationRequest, KPHoraryRequest, KPEventTimingRequest, KPEventTimingChatRequest, KPReadingRequest, KPChatRequest
 
 from app.astrology.calculator import calculate_chart_data
-from app.astrology.rules import evaluate_chart_rules
+from app.astrology.rules import evaluate_chart_rules, calculate_vimshottari_dasha
 from app.astrology.bazi_engine import calculate_bazi_pillars
 from app.astrology.bazi_analysis import analyze_bazi_chart, calculate_bazi_compatibility
 from app.astrology.kp_engine import calculate_kp_chart
@@ -1637,6 +1637,230 @@ def get_bazi_compatibility(
         )
 
 
+@router.post("/bazi/compatibility/reading", summary="Generate detailed AI relationship analysis for Chinese BaZi Synastry")
+async def get_bazi_compatibility_reading(
+    body: BaZiCompatibilityRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Generates a deep, plain-English AI relationship reading for Chinese BaZi Synastry.
+    Explains relationship purpose, whether it is Fated/Karmic/Soulmate, Day Master & Spouse Palace dynamics,
+    strengths, growth areas, and actionable guidance.
+    """
+    try:
+        bazi_a_pillars = calculate_bazi_pillars(
+            year=body.person_a.year,
+            month=body.person_a.month,
+            day=body.person_a.day,
+            hour=body.person_a.hour,
+            minute=body.person_a.minute,
+            lat=body.person_a.latitude,
+            lon=body.person_a.longitude,
+            tz_offset_hours=body.person_a.timezone_offset
+        )
+        bazi_a_analysis = analyze_bazi_chart(bazi_a_pillars)
+
+        bazi_b_pillars = calculate_bazi_pillars(
+            year=body.person_b.year,
+            month=body.person_b.month,
+            day=body.person_b.day,
+            hour=body.person_b.hour,
+            minute=body.person_b.minute,
+            lat=body.person_b.latitude,
+            lon=body.person_b.longitude,
+            tz_offset_hours=body.person_b.timezone_offset
+        )
+        bazi_b_analysis = analyze_bazi_chart(bazi_b_pillars)
+
+        comp_res = calculate_bazi_compatibility(
+            {"pillars_data": bazi_a_pillars, "analysis": bazi_a_analysis},
+            {"pillars_data": bazi_b_pillars, "analysis": bazi_b_analysis}
+        )
+
+        cache_key = f"bazi_compat_reading:{hashlib.md5(json.dumps(body.model_dump(), sort_keys=True).encode()).hexdigest()}"
+        redis = get_redis()
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                logger.info("bazi_compat_reading_cache_hit", key=cache_key)
+                return json.loads(cached)
+        except Exception as e:
+            logger.error("bazi_compat_cache_read_err", error=str(e))
+
+        system_instruction = (
+            "# CHINESE BAZI SYNASTRY RELATIONSHIP ANALYSIS\n"
+            "You are a master Chinese BaZi (Four Pillars of Destiny) astrologer and intuitive relationship guide. "
+            "Write a thorough, deeply detailed, comprehensive plain-English analysis explaining the spiritual and practical nature of this relationship.\n\n"
+            "## CORE OBJECTIVE\n"
+            "Translate complex Four Pillars interactions (He, Sang, Xiang, Chong, Day Master synergy, Spouse Palace, Useful Element) into plain everyday language.\n"
+            "Provide an in-depth reading covering their true core strengths, their growth challenges, and practical life advice.\n\n"
+            "## REQUIRED MARKDOWN FORMAT\n"
+            "# BaZi Synastry Reading: Partner A & Partner B\n\n"
+            "### 🔮 Relationship Archetype & Destiny Classification\n"
+            "- Specify the primary classification clearly (**Fated Soulmate Connection**, **Karmic Growth Catalyst**, **Harmonic Soul Companionship**, or **Dynamic Transformative Connection**).\n"
+            "- Explain in detail why the cosmic pillars assign this classification and what divine/karmic purpose brings them together.\n\n"
+            "### ☯️ Soul Purpose & Higher Meaning\n"
+            "Explain in 2-3 detailed, inspiring paragraphs what this connection is designed to build, transform, or heal in both partners' lives.\n\n"
+            "### 🌊 Day Master & Spouse Palace Dynamics (Plain English)\n"
+            "- Explain Partner A's Day Master element vs Partner B's Day Master element in simple physical terms (e.g., Water nourishing Wood, or Fire sharpening Metal).\n"
+            "- Explain the Spouse Palace (Day Branch) harmony: how they make each other feel safe, loved, and supported at home.\n\n"
+            "### 🌟 True Core Strengths & Harmonic Superpowers\n"
+            "List 4-5 detailed bullet points highlighting the relationship's natural superpowers, emotional compatibility, and effortless alignment.\n\n"
+            "### ⚠️ Areas to Work On & Hidden Growth Lessons\n"
+            "List 3-4 specific potential friction points, communication pitfalls, or karmic triggers with compassionate, actionable advice on how to navigate them.\n\n"
+            "### 💡 Practical Relationship Advice & Actionable Check-ins\n"
+            "Provide 3-4 concrete, real-life rituals or communication practices to maximize harmony and long-term marital success."
+        )
+
+        user_message = (
+            f"BAZI COMPATIBILITY DATA:\n"
+            f"Overall Synastry Score: {comp_res['overall_score']}/100 ({comp_res['compatibility_level']})\n"
+            f"Summary: {comp_res['summary']}\n\n"
+            f"PARTNER A:\n"
+            f"- Year Zodiac: {bazi_a_pillars['zodiac_animal']} ({bazi_a_pillars['pillars']['year']['stem']['element']})\n"
+            f"- Day Master: {bazi_a_pillars['day_master']['char']} ({bazi_a_pillars['day_master']['element']} {bazi_a_pillars['day_master']['polarity']})\n"
+            f"- Spouse Palace (Day Branch): {bazi_a_pillars['pillars']['day']['branch']['char']} ({bazi_a_pillars['pillars']['day']['branch']['zodiac']})\n"
+            f"- Five Elements Balance: {json.dumps(bazi_a_analysis['element_percentages'])}\n\n"
+            f"PARTNER B:\n"
+            f"- Year Zodiac: {bazi_b_pillars['zodiac_animal']} ({bazi_b_pillars['pillars']['year']['stem']['element']})\n"
+            f"- Day Master: {bazi_b_pillars['day_master']['char']} ({bazi_b_pillars['day_master']['element']} {bazi_b_pillars['day_master']['polarity']})\n"
+            f"- Spouse Palace (Day Branch): {bazi_b_pillars['pillars']['day']['branch']['char']} ({bazi_b_pillars['pillars']['day']['branch']['zodiac']})\n"
+            f"- Five Elements Balance: {json.dumps(bazi_b_analysis['element_percentages'])}\n\n"
+            f"SYNASTRY CATEGORY BREAKDOWN:\n"
+            f"{json.dumps(comp_res['categories'])}\n"
+        )
+
+        provider_config = ProviderConfig(provider_name="bedrock", model_id=get_settings().bedrock_model_id, max_tokens=4096)
+        provider = get_provider("bedrock")
+        compiled_prompt = CompiledPrompt(
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_message}
+            ],
+            provider_config=provider_config,
+            total_tokens_estimate=len(system_instruction) // 4 + len(user_message) // 4,
+        )
+
+        result = await provider.generate(compiled_prompt)
+        reading_text = result["content"]
+
+        resp_payload = {
+            "status": "success",
+            "person_a": {
+                "pillars_data": bazi_a_pillars,
+                "analysis": bazi_a_analysis,
+            },
+            "person_b": {
+                "pillars_data": bazi_b_pillars,
+                "analysis": bazi_b_analysis,
+            },
+            "compatibility": comp_res,
+            "reading": reading_text,
+        }
+
+        try:
+            await redis.set(cache_key, json.dumps(resp_payload), ex=7 * 86400)
+        except Exception as e:
+            logger.error("bazi_compat_reading_cache_write_err", error=str(e))
+
+        return resp_payload
+
+    except Exception as e:
+        logger.error("bazi_compatibility_reading_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"BaZi compatibility reading failure: {str(e)}"
+        )
+
+
+@router.post("/bazi/compatibility/chat", summary="Interactive AI chat about BaZi Synastry relationship compatibility")
+async def get_bazi_compatibility_chat(
+    body: BaZiCompatibilityChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Handles follow-up questions about BaZi Synastry relationship compatibility in interactive chat mode.
+    """
+    try:
+        bazi_a_pillars = calculate_bazi_pillars(
+            year=body.person_a.year,
+            month=body.person_a.month,
+            day=body.person_a.day,
+            hour=body.person_a.hour,
+            minute=body.person_a.minute,
+            lat=body.person_a.latitude,
+            lon=body.person_a.longitude,
+            tz_offset_hours=body.person_a.timezone_offset
+        )
+        bazi_a_analysis = analyze_bazi_chart(bazi_a_pillars)
+
+        bazi_b_pillars = calculate_bazi_pillars(
+            year=body.person_b.year,
+            month=body.person_b.month,
+            day=body.person_b.day,
+            hour=body.person_b.hour,
+            minute=body.person_b.minute,
+            lat=body.person_b.latitude,
+            lon=body.person_b.longitude,
+            tz_offset_hours=body.person_b.timezone_offset
+        )
+        bazi_b_analysis = analyze_bazi_chart(bazi_b_pillars)
+
+        comp_res = calculate_bazi_compatibility(
+            {"pillars_data": bazi_a_pillars, "analysis": bazi_a_analysis},
+            {"pillars_data": bazi_b_pillars, "analysis": bazi_b_analysis}
+        )
+
+        system_instruction = (
+            "# CHINESE BAZI SYNASTRY RELATIONSHIP ASSISTANT\n"
+            "You are an empathetic, expert Chinese BaZi relationship counselor. "
+            "The user is asking follow-up questions about their compatibility report.\n\n"
+            "## CONTEXT & GUIDELINES\n"
+            "1. Use simple, warm, everyday English without confusing Chinese jargon.\n"
+            "2. Answer the user's question directly using their calculated synastry metrics.\n"
+            "3. Provide practical, non-fatalistic relationship advice.\n"
+            "4. Keep responses clear, concise, and structured with markdown bullet points."
+        )
+
+        context_prompt = (
+            f"CALCULATED SYNASTRY DATA:\n"
+            f"Synastry Score: {comp_res['overall_score']}/100 ({comp_res['compatibility_level']})\n"
+            f"Partner A Day Master: {bazi_a_pillars['day_master']['char']} ({bazi_a_pillars['day_master']['element']} {bazi_a_pillars['day_master']['polarity']}), Spouse Branch: {bazi_a_pillars['pillars']['day']['branch']['zodiac']}\n"
+            f"Partner B Day Master: {bazi_b_pillars['day_master']['char']} ({bazi_b_pillars['day_master']['element']} {bazi_b_pillars['day_master']['polarity']}), Spouse Branch: {bazi_b_pillars['pillars']['day']['branch']['zodiac']}\n"
+            f"Category Scores: {json.dumps(comp_res['categories'])}\n\n"
+            f"USER QUESTION: {body.question}\n"
+        )
+
+        messages_payload = [{"role": "system", "content": system_instruction}]
+        for msg in body.messages:
+            if msg.get("role") in ["user", "assistant"]:
+                messages_payload.append({"role": msg["role"], "content": msg["content"]})
+        messages_payload.append({"role": "user", "content": context_prompt})
+
+        provider_config = ProviderConfig(provider_name="bedrock", model_id=get_settings().bedrock_model_id, max_tokens=2048)
+        provider = get_provider("bedrock")
+        compiled_prompt = CompiledPrompt(
+            messages=messages_payload,
+            provider_config=provider_config,
+            total_tokens_estimate=len(system_instruction) // 4 + len(context_prompt) // 4,
+        )
+
+        result = await provider.generate(compiled_prompt)
+        return {
+            "status": "success",
+            "reply": result["content"]
+        }
+
+    except Exception as e:
+        logger.error("bazi_compatibility_chat_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"BaZi compatibility chat error: {str(e)}"
+        )
+
+
 
 @router.post("/kp", summary="Calculate authentic KP (Krishnamurti Paddhati) Astrology chart")
 def get_kp_chart(
@@ -1709,6 +1933,471 @@ def get_kp_horary_chart(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"KP Horary calculation failure: {str(e)}"
+        )
+
+
+@router.post("/kp/event-timing", summary="KP Event Timing & Date Predictor (Plain English)")
+async def get_kp_event_timing(
+    body: KPEventTimingRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Calculates exact KP Sub-Lord significators and uses AI to predict precise event timing windows
+    in plain, easy-to-understand English.
+    """
+    try:
+        cache_key = f"kp_timing_v2:{body.year}_{body.month}_{body.day}_{body.hour}_{body.minute}_{body.latitude}_{body.longitude}_{body.event_category}"
+        redis_client = get_redis()
+        if redis_client:
+            try:
+                cached_data = await redis_client.get(cache_key)
+                if cached_data:
+                    return json.loads(cached_data)
+            except Exception as e:
+                logger.warning("redis_cache_read_failed", error=str(e))
+
+        chart_data = calculate_kp_chart(
+            year=body.year,
+            month=body.month,
+            day=body.day,
+            hour=body.hour,
+            minute=body.minute,
+            lat=body.latitude,
+            lon=body.longitude,
+            tz_offset_hours=body.timezone_offset
+        )
+        significators_data = calculate_kp_significators(chart_data)
+
+        # Calculate exact Vimshottari Dasha-Antardasha timeline relative to today
+        today_dt = datetime.now(dt_tz.utc)
+        today_str = today_dt.strftime("%B %d, %Y")
+
+        birth_dt = datetime(body.year, body.month, body.day, body.hour, body.minute, tzinfo=dt_tz.utc)
+        moon_lon = chart_data["planets"]["Moon"]["longitude"]
+        dasha_timeline = calculate_vimshottari_dasha(moon_lon, birth_dt)
+
+        upcoming_dashas = []
+        for m_dasha in dasha_timeline:
+            m_end = datetime.strptime(m_dasha["end"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+            if m_end >= today_dt:
+                for a_dasha in m_dasha.get("antardashas", []):
+                    a_start = datetime.strptime(a_dasha["start"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+                    a_end = datetime.strptime(a_dasha["end"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+                    if a_end >= today_dt and len(upcoming_dashas) < 8:
+                        upcoming_dashas.append({
+                            "mahadasha": m_dasha["lord"].capitalize(),
+                            "antardasha": a_dasha["lord"].capitalize(),
+                            "start_date": a_dasha["start"],
+                            "end_date": a_dasha["end"],
+                            "is_currently_active": (a_start <= today_dt <= a_end)
+                        })
+
+        TARGET_HOUSE_SETS = {
+            "career_job": {2, 6, 10, 11},
+            "marriage_love": {2, 7, 11},
+            "property_asset": {4, 11, 12},
+            "wealth_finance": {2, 6, 11},
+            "travel_visa": {3, 9, 12},
+            "education_exam": {4, 9, 11},
+            "childbirth": {2, 5, 11},
+        }
+
+        target_set = TARGET_HOUSE_SETS.get(body.event_category, {2, 6, 10, 11})
+
+        # Score Antardasha periods deterministically
+        for item in upcoming_dashas:
+            m_lord = item["mahadasha"]
+            a_lord = item["antardasha"]
+            m_houses = set(significators_data["planet_significators"].get(m_lord, {}).get("all_houses", []))
+            a_houses = set(significators_data["planet_significators"].get(a_lord, {}).get("all_houses", []))
+            score = len(m_houses.intersection(target_set)) * 2 + len(a_houses.intersection(target_set)) * 3
+            item["score"] = score
+
+        sorted_dashas = sorted(upcoming_dashas, key=lambda x: x["score"], reverse=True)
+        primary_w = sorted_dashas[0] if sorted_dashas else upcoming_dashas[0]
+        secondary_w = sorted_dashas[1] if len(sorted_dashas) > 1 else (upcoming_dashas[1] if len(upcoming_dashas) > 1 else primary_w)
+
+        primary_date_range = f"{primary_w['start_date']} to {primary_w['end_date']} ({primary_w['mahadasha']}-{primary_w['antardasha']} Period)"
+        secondary_date_range = f"{secondary_w['start_date']} to {secondary_w['end_date']} ({secondary_w['mahadasha']}-{secondary_w['antardasha']} Period)"
+
+        EVENT_HOUSES_DESC = {
+            "career_job": "Houses 2 (Wealth), 6 (Employment/Service), 10 (Profession/Status), 11 (Fulfillment)",
+            "marriage_love": "Houses 2 (Family addition), 7 (Spouse/Partner), 11 (Desire fulfillment)",
+            "property_asset": "Houses 4 (Home/Property/Assets), 11 (Gains), 12 (Investment)",
+            "wealth_finance": "Houses 2 (Bank balance/Accumulated wealth), 6 (Earnings), 11 (Profits)",
+            "travel_visa": "Houses 3 (Short travel), 9 (Long distance journey), 12 (Foreign residency)",
+            "education_exam": "Houses 4 (Education), 9 (Higher knowledge), 11 (Success in competition)",
+            "childbirth": "Houses 2 (Family addition), 5 (Progeny/Children), 11 (Fulfillment)",
+        }
+        target_event_desc = EVENT_HOUSES_DESC.get(body.event_category, "Houses 2, 6, 10, 11")
+
+        system_instruction = (
+            "# KP (KRISHNAMURTI PADDHATI) ASTROLOGY TIMING & EXACT DATE PREDICTOR\n"
+            f"REFERENCE POINT: TODAY'S CURRENT DATE IS {today_str}.\n"
+            f"DETERMINISTIC PRIMARY WINDOW: **{primary_date_range}**\n"
+            f"DETERMINISTIC SECONDARY WINDOW: **{secondary_date_range}**\n\n"
+            "You are a master KP Astrologer known for pinpoint precision in predicting exact dates.\n"
+            "Your objective is to translate raw KP Sub-Lord math, Placidus house significators, and the user's active Dasha-Antardasha timeline into clear, exact date ranges.\n\n"
+            "## ABSOLUTE MANDATE FOR DATE CONSISTENCY:\n"
+            f"1. You MUST use **{primary_date_range}** as the Primary Golden Window.\n"
+            f"2. You MUST use **{secondary_date_range}** as the Secondary Alignment Window.\n"
+            "3. DO NOT CHANGE, ALTER, OR HALLUCINATE ANY OTHER DATES.\n\n"
+            "## REQUIRED MARKDOWN OUTPUT FORMAT:\n"
+            "# 📅 KP Precise Event Timing Analysis\n\n"
+            "### 🎯 Selected Life Event\n"
+            "State the event clearly in plain English.\n\n"
+            "### ⏳ Most Likely Favorable Time Windows (Exact Dates)\n"
+            f"- **Primary Golden Window**: **{primary_date_range}**. Explain in 2 sentences why this exact Dasha period activates the target KP houses.\n"
+            f"- **Secondary Alignment Window**: **{secondary_date_range}**.\n\n"
+            "### 🔑 KP Sub-Lord & Dasha Confirmation (Plain English)\n"
+            "Explain in 2 simple paragraphs how the active Dasha Lord, Star Lord, and Sub Lord signify the event houses without confusing technical jargon.\n\n"
+            "### 💡 Actionable Preparation Steps\n"
+            f"Provide 3 practical steps the user should take starting today ({today_str}) to prepare for this window."
+        )
+
+        user_message = (
+            f"CURRENT REFERENCE DATE: {today_str}\n"
+            f"KP BIRTH CHART & SIGNIFICATORS:\n"
+            f"Ascendant: {chart_data['ascendant']['formatted_degree']} (Sign Lord: {chart_data['ascendant']['sign_lord']}, Star Lord: {chart_data['ascendant']['star_lord']}, Sub Lord: {chart_data['ascendant']['sub_lord']})\n"
+            f"Ruling Planets: {json.dumps(chart_data['ruling_planets'])}\n"
+            f"Target Event Category: {body.event_category} ({target_event_desc})\n"
+            f"Vimshottari Active & Upcoming Dasha Timeline:\n{json.dumps(upcoming_dashas, indent=2)}\n\n"
+            f"House Significators Breakdown:\n{json.dumps(significators_data['house_significators'])}\n\n"
+            f"Planet Significators:\n{json.dumps(significators_data['planet_significators'])}\n"
+        )
+
+        provider_config = ProviderConfig(
+            provider_name="bedrock",
+            model_id=get_settings().bedrock_model_id,
+            max_tokens=4096,
+            temperature=0.0
+        )
+        provider = get_provider("bedrock")
+        compiled_prompt = CompiledPrompt(
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_message}
+            ],
+            provider_config=provider_config,
+            total_tokens_estimate=len(system_instruction) // 4 + len(user_message) // 4,
+        )
+
+        result = await provider.generate(compiled_prompt)
+
+        response_payload = {
+            "status": "success",
+            "event_category": body.event_category,
+            "chart": chart_data,
+            "significators": significators_data,
+            "timing_analysis": result["content"]
+        }
+
+        if redis_client:
+            try:
+                await redis_client.setex(cache_key, 86400, json.dumps(response_payload))
+            except Exception as e:
+                logger.warning("redis_cache_write_failed", error=str(e))
+
+        return response_payload
+
+    except Exception as e:
+        logger.error("kp_event_timing_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"KP event timing prediction failure: {str(e)}"
+        )
+
+
+@router.post("/kp/event-timing/chat", summary="Interactive AI chat about KP Event Timing & Date Predictions")
+async def get_kp_event_timing_chat(
+    body: KPEventTimingChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Handles follow-up questions about KP Event Timing and exact dates in interactive chat mode.
+    """
+    try:
+        chart_data = calculate_kp_chart(
+            year=body.year,
+            month=body.month,
+            day=body.day,
+            hour=body.hour,
+            minute=body.minute,
+            lat=body.latitude,
+            lon=body.longitude,
+            tz_offset_hours=body.timezone_offset
+        )
+        significators_data = calculate_kp_significators(chart_data)
+
+        today_dt = datetime.now(dt_tz.utc)
+        today_str = today_dt.strftime("%B %d, %Y")
+
+        birth_dt = datetime(body.year, body.month, body.day, body.hour, body.minute, tzinfo=dt_tz.utc)
+        moon_lon = chart_data["planets"]["Moon"]["longitude"]
+        dasha_timeline = calculate_vimshottari_dasha(moon_lon, birth_dt)
+
+        upcoming_dashas = []
+        for m_dasha in dasha_timeline:
+            m_end = datetime.strptime(m_dasha["end"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+            if m_end >= today_dt:
+                for a_dasha in m_dasha.get("antardashas", []):
+                    a_start = datetime.strptime(a_dasha["start"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+                    a_end = datetime.strptime(a_dasha["end"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+                    if a_end >= today_dt and len(upcoming_dashas) < 8:
+                        upcoming_dashas.append({
+                            "mahadasha": m_dasha["lord"].capitalize(),
+                            "antardasha": a_dasha["lord"].capitalize(),
+                            "start_date": a_dasha["start"],
+                            "end_date": a_dasha["end"],
+                            "is_currently_active": (a_start <= today_dt <= a_end)
+                        })
+
+        system_instruction = (
+            "# KP ASTROLOGY TIMING & DATE COUNSELOR\n"
+            "You are an empathetic expert KP Astrologer.\n"
+            "CRITICAL INSTRUCTION: You ALREADY HAVE the user's complete birth details (DOB, Birth Time, Coordinates) and active Dasha-Antardasha timeline in the context below.\n"
+            "NEVER ask the user for their birth date, birth time, or running dasha. You already know their exact birth details.\n"
+            "Answer follow-up questions directly in plain, friendly, structured English using their KP Sub-Lord significators and Dasha dates."
+        )
+
+        birth_date_str = f"{body.year}-{body.month:02d}-{body.day:02d}"
+        birth_time_str = f"{body.hour:02d}:{body.minute:02d}"
+        user_name = getattr(current_user, 'name', None) or (current_user.email.split('@')[0].title() if getattr(current_user, 'email', None) else 'User')
+
+        context_prompt = (
+            f"USER BIRTH DETAILS & CONTEXT:\n"
+            f"- Name: {user_name}\n"
+            f"- Birth Date (DOB): {birth_date_str}\n"
+            f"- Birth Time: {birth_time_str}\n"
+            f"- Coordinates: {body.latitude}, {body.longitude}\n"
+            f"- Today's Date: {today_str}\n\n"
+            f"KP ASTROLOGY COMPUTED DATA:\n"
+            f"- Event Category: {body.event_category}\n"
+            f"- Ascendant Sub Lord: {chart_data['ascendant']['sub_lord']}\n"
+            f"- Ruling Planets: {json.dumps(chart_data['ruling_planets'])}\n"
+            f"- Vimshottari Active & Upcoming Dasha Timeline:\n{json.dumps(upcoming_dashas, indent=2)}\n"
+            f"- House Significators: {json.dumps(significators_data['house_significators'])}\n\n"
+            f"USER QUESTION: {body.question}\n"
+        )
+
+        messages_payload = [{"role": "system", "content": system_instruction}]
+        for msg in body.messages:
+            if msg.get("role") in ["user", "assistant"]:
+                messages_payload.append({"role": msg["role"], "content": msg["content"]})
+        messages_payload.append({"role": "user", "content": context_prompt})
+
+        provider_config = ProviderConfig(provider_name="bedrock", model_id=get_settings().bedrock_model_id, max_tokens=2048)
+        provider = get_provider("bedrock")
+        compiled_prompt = CompiledPrompt(
+            messages=messages_payload,
+            provider_config=provider_config,
+            total_tokens_estimate=len(system_instruction) // 4 + len(context_prompt) // 4,
+        )
+
+        result = await provider.generate(compiled_prompt)
+        return {
+            "status": "success",
+            "reply": result["content"]
+        }
+
+    except Exception as e:
+        logger.error("kp_event_timing_chat_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"KP event timing chat failure: {str(e)}"
+        )
+
+
+@router.post("/kp/reading", summary="Generate Deep KP AI Life & Sub-Lord Reading in Plain English")
+async def get_kp_general_reading(
+    body: KPReadingRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Generates a comprehensive, deep KP Astrology Life & Sub-Lord reading in plain English.
+    """
+    try:
+        chart_data = calculate_kp_chart(
+            year=body.year,
+            month=body.month,
+            day=body.day,
+            hour=body.hour,
+            minute=body.minute,
+            lat=body.latitude,
+            lon=body.longitude,
+            tz_offset_hours=body.timezone_offset
+        )
+        significators_data = calculate_kp_significators(chart_data)
+
+        today_dt = datetime.now(dt_tz.utc)
+        today_str = today_dt.strftime("%B %d, %Y")
+        birth_date_str = f"{body.year}-{body.month:02d}-{body.day:02d}"
+        birth_time_str = f"{body.hour:02d}:{body.minute:02d}"
+
+        system_instruction = (
+            "# KP (KRISHNAMURTI PADDHATI) ASTROLOGY DEEP LIFE READING\n"
+            "You are a master KP Astrologer. Synthesize the user's KP Sub-Lord placements, Placidus house significators, and ruling planets into a deep, rich, plain-English life analysis.\n\n"
+            "## MANDATORY STYLED SECTIONS (MARKDOWN):\n\n"
+            "# 🌌 Comprehensive KP Sub-Lord & Life Purpose Analysis\n\n"
+            "### 🌟 1. Core Life Purpose & Lagna Sub-Lord Activation\n"
+            "Explain what the Ascendant Sub-Lord reveals about the user's core identity, aura, and life destiny in simple plain English.\n\n"
+            "### 💼 2. Career, Wealth & Abundance Potential (Houses 2, 6, 10, 11)\n"
+            "Analyze the user's 2nd house (Wealth), 6th house (Service/Work), 10th house (Profession), and 11th house (Gains) significators.\n\n"
+            "### ❤️ 3. Relationships & Life Partnerships (Houses 2, 7, 11)\n"
+            "Analyze the 7th house Sub-Lord and how it shapes soulmate connections and marriage timing.\n\n"
+            "### 💪 4. True Core Strengths & KP Superpowers\n"
+            "Detail 3 major innate strengths based on favorable planet significators.\n\n"
+            "### ⚠️ 5. Areas to Work On & Hidden Cosmic Growth Lessons\n"
+            "Highlight 2 potential challenges or karmic lessons to overcome.\n\n"
+            "### 🔮 6. Key Guidance & Golden Principles for Success\n"
+            "Provide 3 actionable, inspiring takeaways."
+        )
+
+        user_name = getattr(current_user, 'name', None) or (current_user.email.split('@')[0].title() if getattr(current_user, 'email', None) else 'User')
+
+        user_message = (
+            f"USER BIRTH DETAILS:\n"
+            f"- Name: {user_name}\n"
+            f"- Birth Date (DOB): {birth_date_str}\n"
+            f"- Birth Time: {birth_time_str}\n"
+            f"- Coordinates: {body.latitude}, {body.longitude}\n\n"
+            f"KP BIRTH CHART DATA:\n"
+            f"Ascendant Degree: {chart_data['ascendant']['formatted_degree']}\n"
+            f"Ascendant Sign Lord: {chart_data['ascendant']['sign_lord']}, Star Lord: {chart_data['ascendant']['star_lord']}, Sub Lord: {chart_data['ascendant']['sub_lord']}\n"
+            f"Ruling Planets: {json.dumps(chart_data['ruling_planets'])}\n\n"
+            f"Planets & Sub-Lords:\n{json.dumps(chart_data['planets'])}\n\n"
+            f"House Significators:\n{json.dumps(significators_data['house_significators'])}\n"
+        )
+
+        provider_config = ProviderConfig(provider_name="bedrock", model_id=get_settings().bedrock_model_id, max_tokens=4096)
+        provider = get_provider("bedrock")
+        compiled_prompt = CompiledPrompt(
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_message}
+            ],
+            provider_config=provider_config,
+            total_tokens_estimate=len(system_instruction) // 4 + len(user_message) // 4,
+        )
+
+        result = await provider.generate(compiled_prompt)
+
+        return {
+            "status": "success",
+            "chart": chart_data,
+            "significators": significators_data,
+            "reading": result["content"]
+        }
+
+    except Exception as e:
+        logger.error("kp_reading_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"KP reading generation failure: {str(e)}"
+        )
+
+
+@router.post("/kp/chat", summary="Interactive KP AI Life Counselor Chat")
+async def get_kp_general_chat(
+    body: KPChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """
+    Handles general interactive questions about the user's KP chart in plain English.
+    """
+    try:
+        chart_data = calculate_kp_chart(
+            year=body.year,
+            month=body.month,
+            day=body.day,
+            hour=body.hour,
+            minute=body.minute,
+            lat=body.latitude,
+            lon=body.longitude,
+            tz_offset_hours=body.timezone_offset
+        )
+        significators_data = calculate_kp_significators(chart_data)
+
+        today_dt = datetime.now(dt_tz.utc)
+        today_str = today_dt.strftime("%B %d, %Y")
+
+        birth_dt = datetime(body.year, body.month, body.day, body.hour, body.minute, tzinfo=dt_tz.utc)
+        moon_lon = chart_data["planets"]["Moon"]["longitude"]
+        dasha_timeline = calculate_vimshottari_dasha(moon_lon, birth_dt)
+
+        upcoming_dashas = []
+        for m_dasha in dasha_timeline:
+            m_end = datetime.strptime(m_dasha["end"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+            if m_end >= today_dt:
+                for a_dasha in m_dasha.get("antardashas", []):
+                    a_start = datetime.strptime(a_dasha["start"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+                    a_end = datetime.strptime(a_dasha["end"], "%Y-%m-%d").replace(tzinfo=dt_tz.utc)
+                    if a_end >= today_dt and len(upcoming_dashas) < 8:
+                        upcoming_dashas.append({
+                            "mahadasha": m_dasha["lord"].capitalize(),
+                            "antardasha": a_dasha["lord"].capitalize(),
+                            "start_date": a_dasha["start"],
+                            "end_date": a_dasha["end"],
+                            "is_currently_active": (a_start <= today_dt <= a_end)
+                        })
+
+        system_instruction = (
+            "# KP ASTROLOGY LIFE COUNSELOR\n"
+            "You are an empathetic, expert KP Astrologer.\n"
+            "CRITICAL INSTRUCTION: You ALREADY HAVE the user's complete birth details (DOB, Birth Time, Coordinates) and active Dasha-Antardasha timeline in the context below.\n"
+            "NEVER ask the user for their birth date, birth time, or running dasha. You already know their exact birth details.\n"
+            "Answer follow-up questions directly in plain, friendly, structured English using their KP Sub-Lord significators and Dasha dates."
+        )
+
+        birth_date_str = f"{body.year}-{body.month:02d}-{body.day:02d}"
+        birth_time_str = f"{body.hour:02d}:{body.minute:02d}"
+        user_name = getattr(current_user, 'name', None) or (current_user.email.split('@')[0].title() if getattr(current_user, 'email', None) else 'User')
+
+        context_prompt = (
+            f"USER BIRTH DETAILS & CONTEXT:\n"
+            f"- Name: {user_name}\n"
+            f"- Birth Date (DOB): {birth_date_str}\n"
+            f"- Birth Time: {birth_time_str}\n"
+            f"- Coordinates: {body.latitude}, {body.longitude}\n"
+            f"- Today's Date: {today_str}\n\n"
+            f"KP ASTROLOGY COMPUTED DATA:\n"
+            f"- Ascendant Sub Lord: {chart_data['ascendant']['sub_lord']}\n"
+            f"- Ruling Planets: {json.dumps(chart_data['ruling_planets'])}\n"
+            f"- Vimshottari Active & Upcoming Dasha Timeline:\n{json.dumps(upcoming_dashas, indent=2)}\n"
+            f"- Planets Breakdown: {json.dumps(chart_data['planets'])}\n\n"
+            f"USER QUESTION: {body.question}\n"
+        )
+
+        messages_payload = [{"role": "system", "content": system_instruction}]
+        for msg in body.messages:
+            if msg.get("role") in ["user", "assistant"]:
+                messages_payload.append({"role": msg["role"], "content": msg["content"]})
+        messages_payload.append({"role": "user", "content": context_prompt})
+
+        provider_config = ProviderConfig(provider_name="bedrock", model_id=get_settings().bedrock_model_id, max_tokens=2048)
+        provider = get_provider("bedrock")
+        compiled_prompt = CompiledPrompt(
+            messages=messages_payload,
+            provider_config=provider_config,
+            total_tokens_estimate=len(system_instruction) // 4 + len(context_prompt) // 4,
+        )
+
+        result = await provider.generate(compiled_prompt)
+
+        return {
+            "status": "success",
+            "reply": result["content"]
+        }
+
+    except Exception as e:
+        logger.error("kp_chat_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"KP chat failure: {str(e)}"
         )
 
 

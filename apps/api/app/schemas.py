@@ -369,6 +369,13 @@ class BaZiCompatibilityRequest(BaseModel):
     person_b: BaZiChartRequest
 
 
+class BaZiCompatibilityChatRequest(BaseModel):
+    person_a: BaZiChartRequest
+    person_b: BaZiChartRequest
+    question: str
+    messages: list[dict[str, str]] = Field(default_factory=list)
+
+
 
 # ── KP Schemas ───────────────────────────────────────────────────────────────
 
@@ -395,6 +402,61 @@ class KPHoraryRequest(BaseModel):
     longitude: float = Field(default=0.0, ge=-180.0, le=180.0)
     timezone_offset: float = Field(default=0.0, ge=-12.0, le=14.0)
     location_timezone: str = Field(default="UTC", min_length=1, max_length=100)
+
+
+class KPEventTimingRequest(BaseModel):
+    year: int = Field(..., ge=1900, le=2100)
+    month: int = Field(..., ge=1, le=12)
+    day: int = Field(..., ge=1, le=31)
+    hour: int = Field(..., ge=0, le=23)
+    minute: int = Field(..., ge=0, le=59)
+    latitude: float = Field(default=0.0, ge=-90.0, le=90.0)
+    longitude: float = Field(default=0.0, ge=-180.0, le=180.0)
+    timezone_offset: float = Field(default=0.0, ge=-12.0, le=14.0)
+    location_timezone: str = Field(default="UTC", min_length=1, max_length=100)
+    event_category: str = Field(..., min_length=1, max_length=100)
+    target_year: int | None = None
+
+
+class KPEventTimingChatRequest(BaseModel):
+    year: int = Field(..., ge=1900, le=2100)
+    month: int = Field(..., ge=1, le=12)
+    day: int = Field(..., ge=1, le=31)
+    hour: int = Field(..., ge=0, le=23)
+    minute: int = Field(..., ge=0, le=59)
+    latitude: float = Field(default=0.0, ge=-90.0, le=90.0)
+    longitude: float = Field(default=0.0, ge=-180.0, le=180.0)
+    timezone_offset: float = Field(default=0.0, ge=-12.0, le=14.0)
+    location_timezone: str = Field(default="UTC", min_length=1, max_length=100)
+    event_category: str
+    question: str
+    messages: list[dict[str, str]] = Field(default_factory=list)
+
+
+class KPReadingRequest(BaseModel):
+    year: int = Field(..., ge=1900, le=2100)
+    month: int = Field(..., ge=1, le=12)
+    day: int = Field(..., ge=1, le=31)
+    hour: int = Field(..., ge=0, le=23)
+    minute: int = Field(..., ge=0, le=59)
+    latitude: float = Field(default=0.0, ge=-90.0, le=90.0)
+    longitude: float = Field(default=0.0, ge=-180.0, le=180.0)
+    timezone_offset: float = Field(default=0.0, ge=-12.0, le=14.0)
+    location_timezone: str = Field(default="UTC", min_length=1, max_length=100)
+
+
+class KPChatRequest(BaseModel):
+    year: int = Field(..., ge=1900, le=2100)
+    month: int = Field(..., ge=1, le=12)
+    day: int = Field(..., ge=1, le=31)
+    hour: int = Field(..., ge=0, le=23)
+    minute: int = Field(..., ge=0, le=59)
+    latitude: float = Field(default=0.0, ge=-90.0, le=90.0)
+    longitude: float = Field(default=0.0, ge=-180.0, le=180.0)
+    timezone_offset: float = Field(default=0.0, ge=-12.0, le=14.0)
+    location_timezone: str = Field(default="UTC", min_length=1, max_length=100)
+    question: str
+    messages: list[dict[str, str]] = Field(default_factory=list)
 
 
 
