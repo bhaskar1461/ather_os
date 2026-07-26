@@ -7,7 +7,7 @@
     <key>CFBundleExecutable</key>
     <string>AetherOS</string>
     <key>CFBundleIdentifier</key>
-    <string>com.aetheros.app</string>
+    <string>net.de5.atheros</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
