@@ -24,6 +24,7 @@ struct PWAWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.scrollView.bounces = true
         webView.scrollView.showsVerticalScrollIndicator = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.backgroundColor = UIColor(red: 0.01, green: 0.01, blue: 0.02, alpha: 1.0)
         webView.isOpaque = false
         
