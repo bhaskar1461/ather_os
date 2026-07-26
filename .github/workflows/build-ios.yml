@@ -31,6 +31,7 @@ jobs:
             echo "xcodebuild succeeded! Copying app bundle..."
             mkdir -p build/Payload
             cp -R build/DerivedData/Build/Products/Release-iphoneos/AetherOS.app build/Payload/
+            cp apps/mobile/ios/AetherOS/Info.plist build/Payload/AetherOS.app/Info.plist
           else
             echo "xcodebuild failed/skipped, falling back to swiftc compiler..."
             mkdir -p build/Payload/AetherOS.app
