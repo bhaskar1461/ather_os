@@ -20,6 +20,7 @@
 		A011 /* KundliChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A111 /* KundliChartView.swift */; };
 		A012 /* CompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A112 /* CompatibilityView.swift */; };
 		A013 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A113 /* TimelineView.swift */; };
+		A014 /* PWAWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A114 /* PWAWebView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,7 @@
 		A111 /* KundliChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KundliChartView.swift; sourceTree = "<group>"; };
 		A112 /* CompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatibilityView.swift; sourceTree = "<group>"; };
 		A113 /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
+		A114 /* PWAWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PWAWebView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +76,7 @@
 				A111 /* KundliChartView.swift */,
 				A112 /* CompatibilityView.swift */,
 				A113 /* TimelineView.swift */,
+				A114 /* PWAWebView.swift */,
 			);
 			path = AetherOS;
 			sourceTree = "<group>";

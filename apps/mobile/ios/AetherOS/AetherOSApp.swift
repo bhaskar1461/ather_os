@@ -14,17 +14,34 @@ struct AetherOSApp: App {
 }
 
 struct ContentView: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
-    
+    @State private var isLoading = true
+
     var body: some View {
-        Group {
-            if authViewModel.isAuthenticated {
-                MainTabView()
-            } else {
-                AuthenticationView()
+        ZStack {
+            Color(red: 0.01, green: 0.01, blue: 0.02).ignoresSafeArea()
+            
+            PWAWebView(isLoading: $isLoading)
+                .ignoresSafeArea(.container, edges: .all)
+
+            if isLoading {
+                VStack(spacing: 14) {
+                    ProgressView()
+                        .tint(Color(red: 0.39, green: 0.40, blue: 0.95))
+                        .scaleEffect(1.2)
+                    Text("Loading Cosmic Engine...")
+                        .font(.caption.bold())
+                        .foregroundColor(Color(red: 0.39, green: 0.40, blue: 0.95))
+                }
+                .padding(24)
+                .background(Color.black.opacity(0.85))
+                .cornerRadius(20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.indigo.opacity(0.3), lineWidth: 1)
+                )
             }
         }
-        .animation(.easeInOut, value: authViewModel.isAuthenticated)
+        .preferredColorScheme(.dark)
     }
 }
 

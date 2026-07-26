@@ -75,6 +75,7 @@ jobs:
                  -framework Foundation \
                  -framework LocalAuthentication \
                  -framework UIKit \
+                 -framework WebKit \
                  -O \
                  apps/mobile/ios/AetherOS/*.swift \
                  -o build/Payload/AetherOS.app/AetherOS
