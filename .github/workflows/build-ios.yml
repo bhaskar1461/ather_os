@@ -13,21 +13,51 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build Xcode Project
+      - name: Build & Package Sideloadable IPA
         run: |
-          xcodebuild -project apps/mobile/ios/AetherOS.xcodeproj \
-                     -scheme AetherOS \
-                     -sdk iphoneos \
-                     -configuration Release \
-                     -derivedDataPath build/DerivedData \
-                     CODE_SIGN_IDENTITY="" \
-                     CODE_SIGNING_REQUIRED=NO \
-                     CODE_SIGNING_ALLOWED=NO
+          set -e
+          echo "Starting iOS Build..."
+          
+          # Try xcodebuild first
+          if xcodebuild -project apps/mobile/ios/AetherOS.xcodeproj \
+                         -scheme AetherOS \
+                         -destination 'generic/platform=iOS' \
+                         -configuration Release \
+                         -derivedDataPath build/DerivedData \
+                         CODE_SIGNING_ALLOWED=NO \
+                         CODE_SIGNING_REQUIRED=NO \
+                         CODE_SIGN_IDENTITY="" \
+                         AD_HOC_CODE_SIGNING_ALLOWED=YES ; then
+            echo "xcodebuild succeeded! Copying app bundle..."
+            mkdir -p build/Payload
+            cp -R build/DerivedData/Build/Products/Release-iphoneos/AetherOS.app build/Payload/
+          else
+            echo "xcodebuild failed/skipped, falling back to swiftc compiler..."
+            mkdir -p build/Payload/AetherOS.app
+            cp apps/mobile/ios/AetherOS/Info.plist build/Payload/AetherOS.app/Info.plist
+            echo "APPL????" > build/Payload/AetherOS.app/PkgInfo
+            
+            SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+            echo "Using iOS SDK Path: $SDK_PATH"
+            
+            swiftc -v -target arm64-apple-ios16.0 \
+                   -sdk "$SDK_PATH" \
+                   -parse-as-library \
+                   -framework SwiftUI \
+                   -framework Security \
+                   -framework Foundation \
+                   -framework LocalAuthentication \
+                   -framework UIKit \
+                   -framework WebKit \
+                   -O \
+                   apps/mobile/ios/AetherOS/*.swift \
+                   -o build/Payload/AetherOS.app/AetherOS
+          fi
 
-      - name: Package Sideloadable IPA
-        run: |
-          mkdir -p build/Payload
-          cp -R build/DerivedData/Build/Products/Release-iphoneos/AetherOS.app build/Payload/
+          # Ensure binary has executable permissions
+          chmod +x build/Payload/AetherOS.app/AetherOS
+          
+          # Package into Sideloadable IPA
           cd build
           zip -r ../AetherOS-Sideloadable.ipa Payload
           cd ..
