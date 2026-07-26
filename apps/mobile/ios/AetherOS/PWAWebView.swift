@@ -52,6 +52,10 @@ struct PWAWebView: UIViewRepresentable {
             DispatchQueue.main.async {
                 self.parent.isLoading = true
             }
+            // Auto dismiss loading indicator after 2.5 seconds fallback
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                self.parent.isLoading = false
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -64,6 +68,10 @@ struct PWAWebView: UIViewRepresentable {
             DispatchQueue.main.async {
                 self.parent.isLoading = false
             }
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            decisionHandler(.allow)
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
